@@ -1,4 +1,4 @@
-use std::{io::Cursor, ops::Index};
+use std::io::Cursor;
 
 use axum::{
     extract::Path,
@@ -8,6 +8,8 @@ use axum::{
     Router,
 };
 use image::{ImageOutputFormat, RgbImage};
+#[cfg(feature = "online")]
+use tokio::io::AsyncWriteExt;
 
 #[tokio::main]
 async fn main() {
@@ -19,6 +21,12 @@ async fn main() {
         .serve(app.into_make_service())
         .await
         .unwrap();
+}
+
+#[cfg(feature = "online")]
+fn get_tile_url(_style: &str, zoom: i32, x: i32, y: i32) -> String {
+    // TODO: multiple styles, custom tile server
+    format!("https://tile.openstreetmap.org/{zoom}/{x}/{y}.png")
 }
 
 async fn fetch_tile(Path((style, zoom, x, y)): Path<(String, i32, i32, String)>) -> Response {
@@ -45,8 +53,84 @@ async fn fetch_tile(Path((style, zoom, x, y)): Path<(String, i32, i32, String)>)
     };
 
     async fn inner_fetch_tile(style: String, zoom: i32, x: i32, y: i32) -> Result<Vec<u8>, String> {
-        return Err(format!("Tile: {style}/{zoom}/{x}/{y}\nNewline test"));
+        let existing_file = tokio::fs::read(format!("tile-cache/{style}/{zoom}/{x}/{y}.png")).await;
+        match existing_file {
+            Ok(contents) => {
+                return Ok(contents);
+            }
+            Err(why) => {
+                #[cfg(not(feature = "online"))]
+                {
+                    return Err(format!("Could not read tile {style}/{zoom}/{x}/{y}\n{why}\nWill not attempt fetching from web\nEnable 'online' feature for fetching"));
+                }
+
+                #[cfg(feature = "online")]
+                {
+                    drop(why);
+                    // Try fetching the tile image from the online map provider
+                    let client = reqwest::Client::new();
+                    let resp = client.get(get_tile_url(&style, zoom, x, y)).header("User-Agent","pothole-detection-frontend/0.1, +https://github.com/imaginary-units-pfur/pothole-detection-frontend").send().await;
+                    match resp {
+                        Err(why) => {
+                            return Err(format!(
+                                "Could not fetch tile {style}/{zoom}/{x}/{y}\n{why}"
+                            ))
+                        }
+                        Ok(resp) => match resp.error_for_status() {
+                            Err(why) => {
+                                return Err(format!(
+                                    "Could not fetch tile {style}/{zoom}/{x}/{y}\n{why}"
+                                ))
+                            }
+                            Ok(resp) => {
+                                // Download response body
+                                let body = match resp.bytes().await {
+                                    Ok(b) => b,
+                                    Err(why) => {
+                                        return Err(format!(
+                                            "Could not fetch tile {style}/{zoom}/{x}/{y}\n{why}"
+                                        ))
+                                    }
+                                };
+
+                                // Store this to a file
+                                if let Err(why) = tokio::fs::create_dir_all(format!(
+                                    "tile-cache/{style}/{zoom}/{x}"
+                                ))
+                                .await
+                                {
+                                    return Err(format!(
+                                        "Could not save tile {style}/{zoom}/{x}/{y}\n{why}"
+                                    ));
+                                }
+                                let mut file = match tokio::fs::File::create(format!(
+                                    "tile-cache/{style}/{zoom}/{x}/{y}.png"
+                                ))
+                                .await
+                                {
+                                    Ok(f) => f,
+                                    Err(why) => {
+                                        return Err(format!(
+                                            "Could not save tile {style}/{zoom}/{x}/{y}\n{why}"
+                                        ));
+                                    }
+                                };
+
+                                if let Err(why) = file.write_all(&body).await {
+                                    return Err(format!(
+                                        "Could not save tile {style}/{zoom}/{x}/{y}\n{why}"
+                                    ));
+                                };
+
+                                Ok(body.to_vec())
+                            }
+                        },
+                    }
+                }
+            }
+        }
     }
+
     match inner_fetch_tile(style, zoom, x, y).await {
         Ok(img) => {
             let mut resp = img.into_response();
@@ -87,7 +171,7 @@ fn render_error_image(text: &str) -> Vec<u8> {
     // Font: https://dejavu-fonts.github.io/Download.html
     let font = include_bytes!("../DejaVuSans-Bold.ttf");
     let font = rusttype::Font::try_from_bytes(font).unwrap();
-    for (i, line) in text.split("\n").enumerate() {
+    for (i, line) in textwrap::wrap(text, 20).iter().enumerate() {
         image = imageproc::drawing::draw_text(
             &image,
             image::Rgb([255, 255, 255]),
