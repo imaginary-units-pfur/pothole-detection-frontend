@@ -1,5 +1,5 @@
 [package]
-name = "tile-server"
+name = "tile-cache"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,9 +11,13 @@ image = "0.24.7"
 imageproc = "0.23.0"
 reqwest = { version = "0.11.20" , optional = true }
 rusttype = "0.9.3"
+slippy-map-tiles = "0.16.0"
 textwrap = "0.16.0"
 tokio = { version = "1.32.0", features = ["full"] }
+tracing = "0.1.37"
+tracing-subscriber = "0.3.17"
 
 [features]
 online = ["dep:reqwest"]
 #default = ["online"]
+debug-highlight-fresh = []

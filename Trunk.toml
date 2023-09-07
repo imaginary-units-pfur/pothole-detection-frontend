@@ -1,2 +1,2 @@
 [watch]
-ignore=["slippy-map/tile-cache"]
+ignore=["slippy-map/"]

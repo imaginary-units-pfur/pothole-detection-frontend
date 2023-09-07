@@ -1,7 +1,7 @@
 [workspace]
 members = [
     ".",
-    "slippy-map/tile-server",
+    "slippy-map/tile-cache",
 ]
 
 [package]
