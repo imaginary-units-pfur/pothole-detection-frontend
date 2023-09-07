@@ -12,6 +12,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+gloo-net = "0.4.0"
 gloo-utils = "0.2.0"
 leaflet = "0.2.2"
 log = "0.4.20"

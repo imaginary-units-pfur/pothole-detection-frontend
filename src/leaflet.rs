@@ -3,12 +3,12 @@ mod icons;
 use std::rc::Rc;
 
 use gloo_utils::document;
-use leaflet::{LatLng, Map, TileLayer};
+use leaflet::{LatLng, Map, Marker, TileLayer};
 use rand::{Rng, SeedableRng};
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{HtmlElement, Node};
 use yew::prelude::*;
-use yew_hooks::use_is_first_mount;
+use yew_hooks::{use_async, use_is_first_mount};
 
 #[derive(PartialEq, Properties, Clone)]
 pub struct Props {
@@ -20,11 +20,79 @@ pub struct Props {
 
 #[function_component]
 pub fn MapComponent(props: &Props) -> Html {
-    let leaflet_box = use_state(|| None);
+    let leaflet_box = use_state(|| Option::<Rc<Map>>::None);
     let container_box = use_state(|| None);
-    let markers = yew_hooks::use_list(vec![]);
+    let markers: yew_hooks::UseListHandle<(Marker, LatLng, bool)> = yew_hooks::use_list(vec![]);
 
-    let (leaflet, container) = if use_is_first_mount() {
+    // For ensuring that the map container is always the correct size,
+    // as well as for invalidating its initial size of zero (before the element is drawn to the screen)
+    let _leaflet_invalidate_size = yew_hooks::use_interval(
+        {
+            let leaflet_box = leaflet_box.clone();
+            move || {
+                if let Some(leaflet) = leaflet_box.as_ref() {
+                    leaflet.invalidateSize(true);
+                }
+            }
+        },
+        200,
+    );
+
+    let perform_bbox_fetch = use_async({
+        let leaflet = leaflet_box.clone();
+        let markers = markers.clone();
+        async move {
+            if let Some(leaflet) = leaflet.as_ref() {
+                let bounds = leaflet.getBounds();
+                let new_markers = {
+                    // TODO: real HTTP request
+                    let _response = gloo_net::http::Request::get("https://httpbin.org/delay/2")
+                        .send()
+                        .await;
+
+                    let mut markers = vec![];
+                    let ne = bounds.getNorthEast();
+                    let sw = bounds.getSouthWest();
+                    let ne = (ne.lat(), ne.lng());
+                    let sw = (sw.lat(), sw.lng());
+                    let lat_range = if ne.0 > sw.0 { sw.0..ne.0 } else { ne.0..sw.0 };
+                    let lng_range = if ne.1 > sw.1 { sw.1..ne.1 } else { ne.1..sw.1 };
+                    let bound_as_u64: u64 = unsafe { std::mem::transmute(ne.0 + sw.1) };
+                    let mut rng = rand::rngs::StdRng::seed_from_u64(bound_as_u64);
+                    log::info!("{ne:?} {sw:?}");
+                    if ne == sw {
+                        log::error!("Not generating data as the map has zero size");
+                        markers
+                    } else {
+                        for _ in 0..100 {
+                            let pos = LatLng::new(
+                                rng.gen_range(lat_range.clone()),
+                                rng.gen_range(lng_range.clone()),
+                            );
+                            markers.push((Marker::new(&pos), pos, true));
+                        }
+                        markers
+                    }
+                };
+
+                for (old_marker, _pos, is_visible) in markers.current().iter() {
+                    if *is_visible {
+                        old_marker.remove();
+                    }
+                }
+
+                for (new_marker, _pos, _is_visible) in new_markers.iter() {
+                    new_marker.addTo(&leaflet);
+                }
+
+                markers.set(new_markers);
+            }
+
+            Ok::<(), ()>(())
+        }
+    });
+
+    let (_leaflet, container) = if use_is_first_mount() {
         // Initialize the target HTML element
         let container = document().create_element("div").unwrap();
         let container: HtmlElement = container.dyn_into().unwrap();
@@ -56,11 +124,11 @@ pub fn MapComponent(props: &Props) -> Html {
             markers.push((marker, pos, false));
         }
 
-        let handler: Closure<dyn FnMut(leaflet::MouseEvent) -> ()> = Closure::new({
+        let move_handler: Closure<dyn FnMut(leaflet::MouseEvent) -> ()> = Closure::new({
             let leaflet = leaflet_map.clone();
             let markers = markers.clone();
 
-            move |e: leaflet::MouseEvent| {
+            move |_e| {
                 //e.originalEvent().prevent_default();
                 let bounds = leaflet.getBounds();
                 log::info!("Moving map: current bounds are {:?}", bounds);
@@ -111,7 +179,17 @@ pub fn MapComponent(props: &Props) -> Html {
             }
         });
 
-        leaflet_map.on("move", &handler.into_js_value());
+        leaflet_map.on("move", &move_handler.into_js_value());
+
+        let move_finish_handler: Closure<dyn FnMut(leaflet::MouseEvent) -> ()> = Closure::new({
+            let perform_bbox_fetch = perform_bbox_fetch.clone();
+            move |_e| {
+                log::info!("Map drag is complete, querying for new marker state");
+                perform_bbox_fetch.run()
+            }
+        });
+
+        leaflet_map.on("moveend", &move_finish_handler.into_js_value());
 
         leaflet_box.set(Some(leaflet_map));
 
@@ -128,21 +206,17 @@ pub fn MapComponent(props: &Props) -> Html {
         (map, container)
     };
 
-    let invalidate_cb = Callback::from({
-        let leaflet = (*leaflet).clone();
-        move |e: MouseEvent| {
-            web_sys::console::log_1(&leaflet);
-            e.prevent_default();
-            leaflet.invalidateSize(true);
-        }
-    });
-
     // To render the map, need to create VRef to the map's element
     let node: &Node = &container.clone().into();
+    let loading = if perform_bbox_fetch.loading {
+        html!("Loading...")
+    } else {
+        html!()
+    };
     html! {
         <div class={classes!("map-container", props.class.clone())} style={&props.style}>
             {Html::VRef(node.clone())}
-            <button onclick={invalidate_cb}>{"InvalidateSize()"}</button>
+            {loading}
         </div>
     }
 }
