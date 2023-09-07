@@ -1,13 +1,19 @@
 <!DOCTYPE html>
-<html>
+<html data-bs-theme="dark">
   <head>
     <meta charset="utf-8" />
     <title>Pothole Detection Frontend</title>
     <link rel="css" href="contrib-res/leaflet.css" data-trunk />
     <script src="contrib-res/leaflet.js" data-trunk></script>
+    <link rel="css" href="contrib-res/bootstrap.min.css" data-trunk />
+    <link rel="copy-file" href="marker.png" data-trunk />
     <style>
         .map {
-            height:100%;
+            height: 100%;
+        }
+
+        .map-container, .map-container>.card, .map-container>.card>.card-body {
+          transition: 0.5s all;
         }
     </style>
   </head>

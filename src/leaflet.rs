@@ -1,9 +1,9 @@
 mod icons;
 
-use std::rc::Rc;
+use std::{collections::HashMap, rc::Rc};
 
 use gloo_utils::document;
-use leaflet::{LatLng, Map, Marker, TileLayer};
+use leaflet::{Icon, LatLng, Map, Marker, TileLayer};
 use rand::{Rng, SeedableRng};
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{HtmlElement, Node};
@@ -43,13 +43,15 @@ pub fn MapComponent(props: &Props) -> Html {
         let markers = markers.clone();
         async move {
             if let Some(leaflet) = leaflet.as_ref() {
+                log::info!("Starting recalculating markers for area!");
                 let bounds = leaflet.getBounds();
                 let new_markers = {
                     // TODO: real HTTP request
-                    let _response = gloo_net::http::Request::get("https://httpbin.org/delay/2")
+                    let _response = gloo_net::http::Request::get("https://httpbin.org/anything")
                         .send()
                         .await;
 
+                    log::info!("Starting building markers");
                     let mut markers = vec![];
                     let ne = bounds.getNorthEast();
                     let sw = bounds.getSouthWest();
@@ -59,17 +61,33 @@ pub fn MapComponent(props: &Props) -> Html {
                     let lng_range = if ne.1 > sw.1 { sw.1..ne.1 } else { ne.1..sw.1 };
                     let bound_as_u64: u64 = unsafe { std::mem::transmute(ne.0 + sw.1) };
                     let mut rng = rand::rngs::StdRng::seed_from_u64(bound_as_u64);
-                    log::info!("{ne:?} {sw:?}");
-                    if ne == sw {
+                    if ne.0 == sw.0 || ne.1 == sw.1 {
                         log::error!("Not generating data as the map has zero size");
                         markers
                     } else {
+                        #[derive(serde::Serialize)]
+                        #[allow(non_snake_case)]
+                        struct IconOptions {
+                            iconUrl: String,
+                            iconSize: Vec<u32>,
+                        }
+                        let options = IconOptions {
+                            iconUrl: "/marker.png".to_string(),
+                            iconSize: vec![32, 32],
+                        };
+
+                        let options = serde_wasm_bindgen::to_value(&options).unwrap();
+                        web_sys::console::log_1(&options);
+                        let icon = Icon::new(&options);
                         for _ in 0..100 {
                             let pos = LatLng::new(
                                 rng.gen_range(lat_range.clone()),
                                 rng.gen_range(lng_range.clone()),
                             );
-                            markers.push((Marker::new(&pos), pos, true));
+                            let marker = Marker::new(&pos);
+
+                            marker.setIcon(&icon);
+                            markers.push((marker, pos, true));
                         }
                         markers
                     }
@@ -86,6 +104,7 @@ pub fn MapComponent(props: &Props) -> Html {
                 }
 
                 markers.set(new_markers);
+                log::info!("Markers are built!");
             }
 
             Ok::<(), ()>(())
@@ -208,15 +227,14 @@ pub fn MapComponent(props: &Props) -> Html {
 
     // To render the map, need to create VRef to the map's element
     let node: &Node = &container.clone().into();
-    let loading = if perform_bbox_fetch.loading {
-        html!("Loading...")
-    } else {
-        html!()
-    };
+    let loading = perform_bbox_fetch.loading;
     html! {
-        <div class={classes!("map-container", props.class.clone())} style={&props.style}>
-            {Html::VRef(node.clone())}
-            {loading}
+        <div class={classes!("map-container", props.class.clone())}>
+            <div class={classes!("card", loading.then_some("placeholder-wave"))}>
+                <div class={classes!("card-body", loading.then_some("text-warning placeholder"))} style={&props.style}>
+                    {Html::VRef(node.clone())}
+                </div>
+            </div>
         </div>
     }
 }
