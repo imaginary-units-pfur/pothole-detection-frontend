@@ -62,7 +62,20 @@ async fn precache_adjacent_tiles(style: String, zoom: u8, x: u32, y: u32) {
 #[cfg(all(feature = "debug-highlight-fresh", feature = "online"))]
 fn mark_fresh(png_data: Vec<u8>) -> Vec<u8> {
     let image = image::load_from_memory(&png_data).unwrap();
-    let image = image::imageops::huerotate(&image, 180);
+    let angle: i32 = rand::random();
+    let angle = angle % 360;
+    let mut image = image::imageops::huerotate(&image, angle);
+    image::imageops::invert(&mut image);
+
+    for i in 0..256 {
+        for offset in 0..2 {
+            image[(offset, i)] = image::Rgba([255, 0, 255, 255]);
+            image[(i, offset)] = image::Rgba([255, 0, 255, 255]);
+            image[(255 - offset, i)] = image::Rgba([255, 0, 255, 255]);
+            image[(i, 255 - offset)] = image::Rgba([255, 0, 255, 255]);
+        }
+    }
+
     let mut output: Vec<u8> = vec![];
     let mut writer = std::io::BufWriter::new(Cursor::new(&mut output));
     image.write_to(&mut writer, ImageOutputFormat::Png).unwrap();
