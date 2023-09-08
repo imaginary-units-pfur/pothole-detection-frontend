@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use axum::{
-    extract::Path,
+    extract::{Path, State},
     http::{HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
@@ -11,56 +11,198 @@ use image::{ImageOutputFormat, RgbImage};
 #[cfg(feature = "online")]
 use tokio::io::AsyncWriteExt;
 
+#[cfg(feature = "online")]
+#[derive(Clone)]
+struct AppState {
+    client: reqwest::Client,
+}
+
+#[cfg(not(feature = "online"))]
+#[derive(Clone)]
+struct AppState {}
+
+impl AppState {
+    #[cfg(feature = "online")]
+    pub fn new() -> Self {
+        AppState {
+            client: reqwest::Client::new(),
+        }
+    }
+
+    #[cfg(not(feature = "online"))]
+    pub fn new() -> Self {
+        AppState {}
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
     let app = Router::new()
         .route("/", get(|| async { "Slippy map tile server!" }))
-        .route("/:style/:zoom/:x/:y_png", get(fetch_tile));
+        .route("/:style/:idx/:zoom/:x/:y_png", get(fetch_tile))
+        .route(
+            "/precache-until-zoom/:style/:zoom",
+            get(precache_until_zoom),
+        )
+        .route(
+            "/precache-moscow-until-zoom/:style/:zoom",
+            get(precache_moscow_until_zoom),
+        )
+        .with_state(AppState::new());
 
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
+        .http1_keepalive(true)
         .serve(app.into_make_service())
         .await
         .unwrap();
 }
-
 #[cfg(feature = "online")]
-fn get_tile_url(_style: &str, zoom: u8, x: u32, y: u32) -> String {
-    // TODO: multiple styles, custom tile server
-    format!("https://tile.openstreetmap.org/{zoom}/{x}/{y}.png")
+async fn precache_until_zoom(
+    Path((style, zoom)): Path<(String, u8)>,
+    State(state): State<AppState>,
+) -> String {
+    let mut idx_loop = (0..).map(|i| ["a", "b", "c"][i % 3]);
+
+    let mut errors = 0;
+    let mut existing = 0;
+    let mut new = 0;
+
+    for tile in slippy_map_tiles::Tile::all_to_zoom(zoom) {
+        let result = inner_fetch_tile(
+            &state,
+            style.to_string(),
+            idx_loop.next().unwrap().to_string(),
+            tile.zoom(),
+            tile.x(),
+            tile.y(),
+        )
+        .await;
+        match result {
+            Err(e) => {
+                tracing::error!("Error: {e}");
+                errors += 1;
+            }
+            Ok(ans) => match ans {
+                (_, true) => {
+                    existing += 1;
+                }
+                (_, false) => {
+                    new += 1;
+                }
+            },
+        }
+    }
+
+    format!("Errors: {errors}, existing tiles: {existing}, new tiles: {new}")
+}
+
+#[cfg(not(feature = "online"))]
+async fn precache_until_zoom(
+    Path(_args): Path<(String, u8)>,
+    State(_state): State<AppState>,
+) -> &'static str {
+    "Compiled without online support, cannot perform any fetch"
 }
 
 #[cfg(feature = "online")]
-async fn precache_adjacent_tiles(style: String, zoom: u8, x: u32, y: u32) {
+async fn precache_moscow_until_zoom(
+    Path((style, zoom)): Path<(String, u8)>,
+    State(state): State<AppState>,
+) -> String {
+    let mut idx_loop = (0..).map(|i| ["a", "b", "c"][i % 3]);
+
+    let mut errors = 0;
+    let mut existing = 0;
+    let mut new = 0;
+
+    let moscow = slippy_map_tiles::BBox::new(57.0, 36.0, 55.0, 38.0).unwrap();
+    for tile in slippy_map_tiles::Tile::all_to_zoom(zoom) {
+        if !tile.bbox().overlaps_bbox(&moscow) {
+            tracing::debug!("Skip {tile:?}");
+            continue;
+        }
+        let result = inner_fetch_tile(
+            &state,
+            style.to_string(),
+            idx_loop.next().unwrap().to_string(),
+            tile.zoom(),
+            tile.x(),
+            tile.y(),
+        )
+        .await;
+        match result {
+            Err(e) => {
+                tracing::error!("Error: {e}");
+                errors += 1;
+            }
+            Ok(ans) => match ans {
+                (_, true) => {
+                    existing += 1;
+                }
+                (_, false) => {
+                    new += 1;
+                }
+            },
+        }
+    }
+
+    format!("Errors: {errors}, existing tiles: {existing}, new tiles: {new}")
+}
+
+#[cfg(not(feature = "online"))]
+async fn precache_moscow_until_zoom(
+    Path(_args): Path<(String, u8)>,
+    State(_state): State<AppState>,
+) -> &'static str {
+    "Compiled without online support, cannot perform any fetch"
+}
+
+#[cfg(feature = "online")]
+fn get_tile_url(style: &str, idx: &str, zoom: u8, x: u32, y: u32) -> String {
+    match style {
+        "_" => format!("https://tile.openstreetmap.org/{zoom}/{x}/{y}.png"),
+        "transportdark" => format!("https://{idx}.tile.thunderforest.com/transport-dark/{zoom}/{x}/{y}.png?apikey=db5ae1f5778a448ca662554581f283c5"),
+        "matrix" => format!("https://{idx}.tile.jawg.io/jawg-matrix/{zoom}/{x}/{y}.png?access-token=PyTJUlEU1OPJwCJlW1k0NC8JIt2CALpyuj7uc066O7XbdZCjWEL3WYJIk6dnXtps"),
+        _ => panic!("Unknown style: {style}"),
+    }
+    // TODO: multiple styles, custom tile server
+}
+
+#[cfg(feature = "online")]
+fn precache_adjacent_tiles(state: &AppState, style: String, idx: String, zoom: u8, x: u32, y: u32) {
     tracing::info!("Precaching tiles for {style}/{zoom}/{x}/{y}");
     // Also download the tiles one level below the one we have, and all the levels above.
     let this_tile = slippy_map_tiles::Tile::new(zoom, x, y).unwrap();
     if let Some(subtiles) = this_tile.subtiles() {
         for tile in subtiles {
-            tokio::spawn(inner_fetch_tile(
-                style.to_string(),
-                tile.zoom(),
-                tile.x(),
-                tile.y(),
-            ));
+            tokio::spawn({
+                let state = state.clone();
+                let style = style.clone();
+                let idx = idx.clone();
+                async move {
+                    inner_fetch_tile(&state, style, idx, tile.zoom(), tile.x(), tile.y()).await
+                }
+            });
         }
     }
 
     let mut supertile = this_tile.parent();
     while let Some(tile) = supertile {
-        tokio::spawn(inner_fetch_tile(
-            style.to_string(),
-            tile.zoom(),
-            tile.x(),
-            tile.y(),
-        ));
+        tokio::spawn({
+            let state = state.clone();
+            let style = style.clone();
+            let idx = idx.clone();
+
+            async move { inner_fetch_tile(&state, style, idx, tile.zoom(), tile.x(), tile.y()).await }
+        });
         supertile = tile.parent();
     }
 }
 
 #[cfg(all(feature = "debug-highlight-fresh", feature = "online"))]
-fn mark_fresh(png_data: Vec<u8>) -> Vec<u8> {
+fn mark_fresh(png_data: Vec<u8>) -> (Vec<u8>, bool) {
     let image = image::load_from_memory(&png_data).unwrap();
     let angle: i32 = rand::random();
     let angle = angle % 360;
@@ -81,24 +223,33 @@ fn mark_fresh(png_data: Vec<u8>) -> Vec<u8> {
     image.write_to(&mut writer, ImageOutputFormat::Png).unwrap();
 
     drop(writer);
-    output
+    (output, false)
 }
 
 #[cfg(all(not(feature = "debug-highlight-fresh"), feature = "online"))]
-fn mark_fresh(png_data: Vec<u8>) -> Vec<u8> {
-    png_data
+fn mark_fresh(png_data: Vec<u8>) -> (Vec<u8>, bool) {
+    (png_data, true)
 }
 
-async fn inner_fetch_tile(style: String, zoom: u8, x: u32, y: u32) -> Result<Vec<u8>, String> {
+async fn inner_fetch_tile(
+    state: &AppState,
+    style: String,
+    idx: String,
+    zoom: u8,
+    x: u32,
+    y: u32,
+) -> Result<(Vec<u8>, bool), String> {
     let existing_file = tokio::fs::read(format!("tile-cache/{style}/{zoom}/{x}/{y}.png")).await;
     match existing_file {
         Ok(contents) => {
             tracing::info!("Tile {style}/{zoom}/{x}/{y} already on disk");
-            return Ok(contents);
+            return Ok((contents, true));
         }
         Err(why) => {
             #[cfg(not(feature = "online"))]
             {
+                drop(idx);
+                drop(state);
                 tracing::error!(
                     "Tile {style}/{zoom}/{x}/{y} not already on disk, and built without online"
                 );
@@ -110,8 +261,7 @@ async fn inner_fetch_tile(style: String, zoom: u8, x: u32, y: u32) -> Result<Vec
                 drop(why);
                 tracing::info!("Downloading tile {style}/{zoom}/{x}/{y}");
                 // Try fetching the tile image from the online map provider
-                let client = reqwest::Client::new();
-                let resp = client.get(get_tile_url(&style, zoom, x, y)).header("User-Agent","pothole-detection-frontend/0.1, +https://github.com/imaginary-units-pfur/pothole-detection-frontend").send().await;
+                let resp = state.client.get(get_tile_url(&style, &idx, zoom, x, y)).header("Referer", "http://leaflet-extras.github.io").header("User-Agent","pothole-detection-frontend/0.1, +https://github.com/imaginary-units-pfur/pothole-detection-frontend").send().await;
                 match resp {
                     Err(why) => {
                         return Err(format!(
@@ -172,7 +322,10 @@ async fn inner_fetch_tile(style: String, zoom: u8, x: u32, y: u32) -> Result<Vec
     }
 }
 
-async fn fetch_tile(Path((style, zoom, x, y)): Path<(String, u8, u32, String)>) -> Response {
+async fn fetch_tile(
+    Path((style, idx, zoom, x, y)): Path<(String, String, u8, u32, String)>,
+    State(state): State<AppState>,
+) -> Response {
     let y = y.split(".").nth(0);
     let y = match y {
         None => {
@@ -195,13 +348,37 @@ async fn fetch_tile(Path((style, zoom, x, y)): Path<(String, u8, u32, String)>) 
         }
     };
 
-    match inner_fetch_tile(style.to_string(), zoom, x, y).await {
-        Ok(img) => {
+    match inner_fetch_tile(&state, style, idx.to_string(), zoom, x, y).await {
+        Ok((img, is_cacheable)) => {
             let mut resp = img.into_response();
             resp.headers_mut()
                 .insert("Content-Type", HeaderValue::from_static("image/png"));
+            if is_cacheable {
+                resp.headers_mut().insert(
+                    "Cache-Control",
+                    HeaderValue::from_static("max-age=604800, public, immutable"),
+                );
+            } else {
+                resp.headers_mut().insert(
+                    "Cache-Control",
+                    HeaderValue::from_static("no-cache, no-store"),
+                );
+            }
             #[cfg(feature = "online")]
-            tokio::spawn(precache_adjacent_tiles(style, zoom, x, y));
+            {
+                let state = state.clone();
+
+                precache_adjacent_tiles(&state, "_".to_string(), idx.to_string(), zoom, x, y);
+                precache_adjacent_tiles(
+                    &state,
+                    "transportdark".to_string(),
+                    idx.to_string(),
+                    zoom,
+                    x,
+                    y,
+                );
+                precache_adjacent_tiles(&state, "matrix".to_string(), idx.to_string(), zoom, x, y);
+            }
 
             resp
         }
