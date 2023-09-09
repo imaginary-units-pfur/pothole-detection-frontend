@@ -1,4 +1,5 @@
 mod leaflet;
+mod point_display;
 
 use yew::prelude::*;
 
@@ -12,9 +13,9 @@ fn main() {
 #[function_component(App)]
 pub fn app() -> Html {
     html! {
-        <main>
+        <main style="height: 100%" class="mb-2">
             <h1>{ "Hello World!" }</h1>
-            <MapComponent style="height: 500px"/>
+            <MapComponent style="height: 100%"/>
         </main>
     }
 }

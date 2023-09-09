@@ -173,20 +173,43 @@ fn get_tile_url(style: &str, idx: &str, zoom: u8, x: u32, y: u32) -> String {
 #[cfg(feature = "online")]
 fn precache_adjacent_tiles(state: &AppState, style: String, idx: String, zoom: u8, x: u32, y: u32) {
     tracing::info!("Precaching tiles for {style}/{zoom}/{x}/{y}");
-    // Also download the tiles one level below the one we have, and all the levels above.
+    // Also download the tiles several levels below the one we have, and all the levels above.
     let this_tile = slippy_map_tiles::Tile::new(zoom, x, y).unwrap();
-    if let Some(subtiles) = this_tile.subtiles() {
-        for tile in subtiles {
-            tokio::spawn({
-                let state = state.clone();
-                let style = style.clone();
-                let idx = idx.clone();
-                async move {
-                    inner_fetch_tile(&state, style, idx, tile.zoom(), tile.x(), tile.y()).await
-                }
-            });
+
+    #[async_recursion::async_recursion]
+    async fn fetch_subtiles(
+        this_tile: slippy_map_tiles::Tile,
+        state: &AppState,
+        style: &str,
+        idx: &str,
+        levels: u8,
+    ) {
+        if levels == 0 {
+            return;
+        }
+
+        if let Some(subtiles) = this_tile.subtiles() {
+            for tile in subtiles {
+                tokio::spawn({
+                    let state = state.clone();
+                    let style = style.to_string();
+                    let idx = idx.to_string();
+                    async move {
+                        inner_fetch_tile(&state, style, idx, tile.zoom(), tile.x(), tile.y()).await
+                    }
+                });
+
+                fetch_subtiles(tile, &state, style, idx, levels - 1).await;
+            }
         }
     }
+
+    tokio::spawn({
+        let state = state.clone();
+        let style = style.to_string();
+        let idx = idx.to_string();
+        async move { fetch_subtiles(this_tile, &state, &style, &idx, 2).await }
+    });
 
     let mut supertile = this_tile.parent();
     while let Some(tile) = supertile {
@@ -249,7 +272,6 @@ async fn inner_fetch_tile(
             #[cfg(not(feature = "online"))]
             {
                 drop(idx);
-                drop(state);
                 tracing::error!(
                     "Tile {style}/{zoom}/{x}/{y} not already on disk, and built without online"
                 );

@@ -1,19 +1,23 @@
 mod icons;
 mod layers;
 
-use std::rc::Rc;
+use std::{rc::Rc, str::FromStr};
 
 use gloo_utils::document;
-use leaflet::{LatLng, Map, Marker, TileLayer};
+use leaflet::{LatLng, Map, Marker};
 use rand::{Rng, SeedableRng};
+use reqwest::{Method, Request};
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{HtmlElement, Node};
 use yew::prelude::*;
 use yew_hooks::{use_async, use_is_first_mount};
 
-use crate::leaflet::{
-    icons::IconGenerator,
-    layers::{get_default_layer, get_matrix_layer, get_transport_layer},
+use crate::{
+    leaflet::{
+        icons::IconGenerator,
+        layers::{get_default_layer, get_matrix_layer, get_transport_layer},
+    },
+    point_display::PointDisplay,
 };
 
 #[derive(PartialEq, Properties, Clone)]
@@ -53,6 +57,8 @@ pub fn MapComponent(props: &Props) -> Html {
 
     let markers: yew_hooks::UseListHandle<(Marker, LatLng, bool)> = yew_hooks::use_list(vec![]);
 
+    let clicked_point_info = use_state(|| Option::<usize>::None);
+
     // For ensuring that the map container is always the correct size,
     // as well as for invalidating its initial size of zero (before the element is drawn to the screen)
     let _leaflet_invalidate_size = yew_hooks::use_interval(
@@ -70,14 +76,19 @@ pub fn MapComponent(props: &Props) -> Html {
     let perform_bbox_fetch = use_async({
         let leaflet = leaflet_box.clone();
         let markers = markers.clone();
+        let clicked_point_info = clicked_point_info.clone();
         async move {
             if let Some(leaflet) = leaflet.as_ref() {
                 log::info!("Starting recalculating markers for area!");
                 let bounds = leaflet.getBounds();
                 let new_markers = {
                     // TODO: real HTTP request
-                    let _response = gloo_net::http::Request::get("https://httpbin.org/anything")
-                        .send()
+                    let client = reqwest::Client::new();
+                    let _response = client
+                        .execute(Request::new(
+                            Method::GET,
+                            reqwest::Url::from_str("https://httpbin.org/anything").unwrap(),
+                        ))
                         .await;
 
                     log::info!("Starting building markers");
@@ -100,6 +111,7 @@ pub fn MapComponent(props: &Props) -> Html {
                         icons.push(gen.crack());
                         icons.push(gen.hole());
                         icons.push(gen.patch());
+
                         for i in 0..100 {
                             let pos = LatLng::new(
                                 rng.gen_range(lat_range.clone()),
@@ -108,6 +120,15 @@ pub fn MapComponent(props: &Props) -> Html {
                             let marker = Marker::new(&pos);
 
                             marker.setIcon(&icons[i % icons.len()]);
+                            let click_handler: Closure<dyn FnMut(leaflet::MouseEvent) -> ()> =
+                                Closure::new({
+                                    let clicked_point_id = clicked_point_info.clone();
+                                    move |_e| {
+                                        clicked_point_id.set(Some(i));
+                                    }
+                                });
+
+                            marker.on("click", &click_handler.into_js_value());
                             markers.push((marker, pos, true));
                         }
                         markers
@@ -291,16 +312,31 @@ pub fn MapComponent(props: &Props) -> Html {
         </div>
     };
 
+    let clear_clicked_cb = Callback::from({
+        let clicked_point_id = clicked_point_info.clone();
+        move |_| {
+            clicked_point_id.set(None);
+        }
+    });
+
     // To render the map, need to create VRef to the map's element
     let node: &Node = &container.clone().into();
     let loading = perform_bbox_fetch.loading;
     html! {
         <div class={classes!("map-container", props.class.clone())}>
-            <div class={classes!("card", loading.then_some("placeholder-wave"))}>
-                <div class={classes!("card-body", loading.then_some("text-warning placeholder"))} style={&props.style}>
-                    {Html::VRef(node.clone())}
+            <div class="map-and-pointview">
+
+                // Main map widget inside a Card component
+                <div class={classes!("card", "map-card", "mapview", loading.then_some("placeholder-wave"))}>
+                    <div class={classes!("card-body", "map-card-body", loading.then_some("text-warning placeholder"))} style={&props.style}>
+                        {Html::VRef(node.clone())}
+                    </div>
+                    {map_style_choice}
                 </div>
-                {map_style_choice}
+
+                // Side element containing info about clicked points
+
+                <PointDisplay leaflet={leaflet.clone()} clicked_point_info={*clicked_point_info} {clear_clicked_cb} />
             </div>
         </div>
     }

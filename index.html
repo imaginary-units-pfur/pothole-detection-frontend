@@ -11,13 +11,48 @@
     <link rel="copy-file" href="art/hole.png" data-trunk />
     <link rel="copy-file" href="art/patch.png" data-trunk />
     <style>
-        .map {
+        html, body, .map {
             height: 100%;
+        }
+
+        main {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+        }
+        .map-container {
+          flex: 1 1 auto;
+        }
+        .map-card, .map-card-body {
+          height: 100%;
         }
 
         .map-container, .map-container>.card, .map-container>.card>.card-body {
           transition: 0.5s all;
         }
+
+
+        .map-and-pointview {
+          display: flex;
+          flex-direction: row;
+          height: 100%;
+          gap: 10px;
+        }
+
+        .mapview {
+          flex: 6 5 auto;
+        }
+
+        .pointview {
+          flex: 4 0 auto;
+          transition: 1s flex-grow;
+        }
+
+        /* Leaflet style  */
+        .leaflet-container {
+          background-color: var(--bs-warning-bg-subtle);
+        }
+
     </style>
   </head>
 </html>
