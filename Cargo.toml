@@ -27,3 +27,4 @@ yew-hooks = "0.2.0"
 common_data = { path = "backend/common_data" }
 frontend_requests = { path = "backend/frontend_requests" }
 anyhow = "1.0.75"
+prokio = "0.1.0"

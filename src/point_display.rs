@@ -1,14 +1,10 @@
-use std::{rc::Rc, str::FromStr};
+use std::rc::Rc;
 
-use common_data::RoadDamage;
-use reqwest::{Method, Request};
-use yew::{
-    prelude::*,
-    suspense::{use_future, use_future_with_deps},
-};
+use common_data::{DamageType, RoadDamage};
+use yew::{prelude::*, suspense::use_future_with_deps};
 use yew_hooks::use_previous;
 
-use crate::SERVER_ADDR;
+use crate::{leaflet::icons::ShowIcon, SERVER_ADDR};
 
 #[derive(Properties)]
 pub struct PointDisplayProps {
@@ -28,11 +24,19 @@ impl PartialEq for PointDisplayProps {
 pub fn PointDisplay(props: &PointDisplayProps) -> Html {
     let previous_point = use_previous(props.clicked_point_info.clone());
 
+    let mut do_hide = false;
     let info = match props.clicked_point_info {
-        Some(ref v) => v,
-        None => {
-            return html!(<div class="pointview" style="flex: 0.0000001 0 auto; width:0px;">{"No point selected yet..."}</div>)
-        }
+        Some(ref v) => v, // If we have a value, just render the pane as is.
+        None => match *previous_point {
+            Some(ref v) => {
+                do_hide = true; // If we have just lost this value, then render the pane with a style hiding it.
+                v
+            }
+            None => {
+                // If the value has been unavailable for a while, render a hidden pane.
+                return html!(<div class="pointview" style="flex: 0.0000001 0 auto; width:0px;">{"No point selected yet..."}</div>);
+            }
+        },
     };
 
     let clear_clicked_cb = Callback::from({
@@ -44,15 +48,21 @@ pub fn PointDisplay(props: &PointDisplayProps) -> Html {
     });
 
     let fallback = html!(<SamplePointInfo sample_info={info.clone()} />);
+    let style = if do_hide {
+        "flex: 0.0000001 0 auto; width:0px;"
+    } else {
+        "flex: 4 0 auto; width:0px;"
+    };
     html! {
-        <div class="pointview" style="flex: 4 0 auto; width:0px;">
+        <div class="pointview" style={style}>
             <div style="position: relative;">
                 <Suspense {fallback}>
                     <DetailedPointInfo sample_info={info.clone()} />
                 </Suspense>
-                <button class="btn btn-outline-danger" onclick={clear_clicked_cb.clone()}>{"Unclick"}</button>
             </div>
-            <button type="button" class="btn-close" style="position: absolute; top:0; right:0; z-index: 2; padding: 1.25rem 1rem;" onclick={clear_clicked_cb.clone()}></button>
+            if !do_hide {
+                <button type="button" class="btn-close" style="position: absolute; top:0; right:0; z-index: 2; padding: 1.25rem 1rem;" onclick={clear_clicked_cb.clone()}></button>
+            }
         </div>
     }
 }
@@ -67,8 +77,21 @@ pub fn SamplePointInfo(props: &SampleInfo) -> Html {
     let info = props.sample_info.clone();
     html!(
         <>
-            <h1>{"Point "}{info.id}</h1>
-            <p>{"Loading detailed info..."}</p>
+            <h1>{"Point "}{info.id}<ShowIcon damage_type={info.damage_type} /></h1>
+            <h2><span class="placeholder col-7"></span></h2>
+            <p><span class="placeholder col-7"></span></p>
+            <p><span class="placeholder col-7"></span></p>
+            <div class="card">
+                <div class="card-body">
+                    <div class="spinner-border" role="status">
+                    </div>
+                </div>
+            </div>
+            <hr />
+
+            <h3>{"Analysis details"}</h3>
+            <p><span class="placeholder col-3"></span><span class="placeholder text-bg-success col-7"></span></p>
+            <p><span class="placeholder col-5"></span><span class="placeholder text-bg-info col-7"></span></p>
         </>
     )
 }
@@ -80,6 +103,7 @@ pub fn DetailedPointInfo(props: &SampleInfo) -> HtmlResult {
         {
             |info: Rc<RoadDamage>| async move {
                 let response = frontend_requests::get_info_by_id(SERVER_ADDR, info.id).await;
+                prokio::time::sleep(std::time::Duration::from_secs_f32(0.2f32)).await;
                 response
             }
         },
@@ -87,20 +111,53 @@ pub fn DetailedPointInfo(props: &SampleInfo) -> HtmlResult {
     )?;
     let info = props.sample_info.clone();
     match *response {
-        Ok(ref more_info) => Ok(html!(
-            <>
-                <h1>{"Point "}{info.id}</h1>
+        Ok(ref more_info) => {
+            let kind = match info.damage_type {
+                DamageType::Crack => "Crack",
+                DamageType::Patch => "Patch",
+                DamageType::Pothole => "Pothole",
+                DamageType::Other | _ => "Other",
+            };
 
-                <p>{"Detailed info loaded for point "}{format!("{:?}", more_info)}</p>
+            let score = std::f64::consts::PI / 10.0;
 
-            </>
-        )),
+            use crate::SERVER_ADDR;
+
+            Ok(html!(
+                <>
+                    <h1>{"Point "}{info.id}<ShowIcon damage_type={info.damage_type} /></h1>
+
+                    <h2>{"Kind: "}{kind}</h2>
+                    <p>{"Longitude: "}{info.longitude}</p>
+                    <p>{"Latitude: "}{info.latitude}</p>
+                    <div class="card">
+                        <div class="card-body">
+                            <img src={format!("{SERVER_ADDR}/image/of-point/{}", info.id)} />
+                        </div>
+                    </div>
+                    <hr />
+
+                    <h3>{"Analysis details"}</h3>
+                    <p>{"Label: "}<span class="text-success">{"qwertyuiopasdfghjkl"}</span></p>
+                    <p>{"Confidence: "}<span class="text-info">{format!("{:.5}%", score*100.0)}</span>
+
+                        <div class="progress" role="progressbar">
+                            <div class="progress-bar bg-info" style={format!("width: {}%", score*100.0)}>
+                            </div>
+                        </div>
+
+                    </p>
+
+
+                </>
+            ))
+        }
         Err(ref why) => Ok(html!(
             <>
-            <h1>{"Point "}{info.id}</h1>
+            <h1>{"Point "}{info.id}<ShowIcon damage_type={info.damage_type} /></h1>
 
             <div class="alert alert-danger nuh-uh">
-                {"Error fetching additional info: "}
+                {"Could not fetch additional info: "}
                 <code>{why}</code>
             </div>
 

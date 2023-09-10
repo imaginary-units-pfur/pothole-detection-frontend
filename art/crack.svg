@@ -24,13 +24,13 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="mm"
      inkscape:clip-to-page="false"
-     inkscape:zoom="8.0933172"
-     inkscape:cx="18.53381"
-     inkscape:cy="25.638437"
+     inkscape:zoom="16.186634"
+     inkscape:cx="9.1433461"
+     inkscape:cy="12.510321"
      inkscape:window-width="1280"
      inkscape:window-height="661"
-     inkscape:window-x="2290"
-     inkscape:window-y="301"
+     inkscape:window-x="213"
+     inkscape:window-y="842"
      inkscape:window-maximized="0"
      inkscape:current-layer="layer1" />
   <defs
@@ -40,14 +40,14 @@
      inkscape:groupmode="layer"
      id="layer1">
     <ellipse
-       style="fill:#8cbebb;fill-opacity:1;stroke-width:0.234043"
+       style="fill:#007f0e;fill-opacity:1;stroke-width:0.234043"
        id="path1"
        cx="13.93997"
        cy="13.733962"
        rx="13.93997"
        ry="13.733962" />
     <path
-       style="fill:#8cbebb;fill-opacity:1;stroke-width:0.265309"
+       style="fill:#007f0e;fill-opacity:1;stroke-width:0.265309"
        id="path2"
        d="M 13.789912,31.999999 10.50467,23.70124 2.9713489,22.259033 l 5.53187,-6.331029 -1.190135,-9.0827109 6.7041261,4.3859679 6.797783,-4.1712193 -1.388497,9.0417023 5.39139,6.504757 -7.562264,1.202109 z" />
     <ellipse

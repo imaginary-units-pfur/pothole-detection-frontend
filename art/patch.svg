@@ -29,8 +29,8 @@
      inkscape:cy="11.838529"
      inkscape:window-width="1280"
      inkscape:window-height="661"
-     inkscape:window-x="2290"
-     inkscape:window-y="301"
+     inkscape:window-x="137"
+     inkscape:window-y="906"
      inkscape:window-maximized="0"
      inkscape:current-layer="layer1" />
   <defs
@@ -40,14 +40,14 @@
      inkscape:groupmode="layer"
      id="layer1">
     <ellipse
-       style="fill:#8dbe8c;fill-opacity:1;stroke-width:0.235051"
+       style="fill:#3d3805;fill-opacity:1;stroke-width:0.235051"
        id="path1-4"
        cx="14"
        cy="13.793103"
        rx="14"
        ry="13.793103" />
     <path
-       style="fill:#8dbe8c;fill-opacity:1;stroke-width:0.266452"
+       style="fill:#3d3805;fill-opacity:1;stroke-width:0.266452"
        id="path2-0"
        d="M 13.960074,31.957584 10.660687,23.623091 3.0949212,22.174675 8.6506171,15.816387 7.4553545,6.6945584 l 6.7329965,4.4048556 6.827051,-4.1891841 -1.394475,9.0806371 5.414614,6.532771 -7.594831,1.207288 z" />
     <ellipse

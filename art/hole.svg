@@ -24,13 +24,13 @@
      inkscape:deskcolor="#d1d1d1"
      inkscape:document-units="mm"
      inkscape:clip-to-page="false"
-     inkscape:zoom="5.7228395"
-     inkscape:cx="13.105382"
-     inkscape:cy="11.794844"
+     inkscape:zoom="16.186634"
+     inkscape:cx="13.529681"
+     inkscape:cy="13.251674"
      inkscape:window-width="1280"
      inkscape:window-height="661"
-     inkscape:window-x="2290"
-     inkscape:window-y="301"
+     inkscape:window-x="277"
+     inkscape:window-y="890"
      inkscape:window-maximized="0"
      inkscape:current-layer="layer1" />
   <defs
@@ -40,14 +40,14 @@
      inkscape:groupmode="layer"
      id="layer1">
     <ellipse
-       style="fill:#cd4444;fill-opacity:1;stroke-width:0.235051"
+       style="fill:#ff1212;fill-opacity:1;stroke-width:0.235051"
        id="path1-4-5-2"
        cx="14"
        cy="13.793103"
        rx="14"
        ry="13.793103" />
     <path
-       style="fill:#cd4444;fill-opacity:1;stroke-width:0.266452"
+       style="fill:#ff1212;fill-opacity:1;stroke-width:0.266452"
        id="path2-59"
        d="M 13.462607,31.699803 10.16322,23.365311 2.5974546,21.916895 8.153151,15.558607 6.9578885,6.4367769 13.690883,10.841634 20.517936,6.6524481 19.12346,15.733087 l 5.414614,6.53277 -7.59483,1.207289 z" />
     <ellipse
@@ -66,7 +66,7 @@
        d="M 4.8448406,18.962905 8.463397,16.64016 6.5217227,10.50551 15.447944,5.8188675 25.454285,17.530631 l -5.228367,4.45476 -8.275294,3.003354 z"
        id="path186-7" />
     <path
-       style="fill:#5f0b0b;fill-opacity:1;stroke:#ffffff;stroke-width:0.349391;stroke-dasharray:none;stroke-opacity:1"
+       style="fill:#000000;fill-opacity:1;stroke:#ffffff;stroke-width:0.349391;stroke-dasharray:none;stroke-opacity:1"
        id="path187"
        d="m 14.736807,10.022913 5.767191,9.7104 -11.5343831,-10e-7 z" />
     <path
@@ -74,11 +74,11 @@
        d="M 14.785744,18.357483 Z"
        id="path188" />
     <path
-       style="fill:#5f0b0b;fill-opacity:1;stroke:#ffffff;stroke-width:0.265626;stroke-dasharray:none;stroke-opacity:1"
+       style="fill:#fe0b0b;fill-opacity:1;stroke:#ffffff;stroke-width:0.265626;stroke-dasharray:none;stroke-opacity:1"
        d="m 13.611224,13.561532 h 2.251168 l -1.174521,3.425682 z"
        id="path189" />
     <path
-       style="fill:#5f0b0b;fill-opacity:1;stroke:#ffffff;stroke-width:0.265626;stroke-dasharray:none;stroke-opacity:1"
+       style="fill:#ff0000;fill-opacity:1;stroke:#ffffff;stroke-width:0.265626;stroke-dasharray:none;stroke-opacity:1"
        d="m 14.394243,18.063856 0.978765,0.09788 v 0.685135 h -0.978765 z"
        id="path190" />
   </g>

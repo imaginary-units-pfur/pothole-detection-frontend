@@ -1,7 +1,7 @@
-mod icons;
+pub mod icons;
 mod layers;
 
-use std::{collections::HashMap, marker, rc::Rc};
+use std::{collections::HashMap, rc::Rc};
 
 use common_data::{DamageType, RoadDamage};
 use gloo_utils::document;
@@ -55,7 +55,7 @@ pub fn MapComponent(props: &Props) -> Html {
     }
     let current_layer_style = use_state(|| LayerStyle::Default);
 
-    let markers: UseStateHandle<HashMap<i64, (RoadDamage, Rc<Marker>, (f64, f64), bool)>> =
+    let markers: UseStateHandle<HashMap<u64, (RoadDamage, Rc<Marker>, (f64, f64), bool)>> =
         use_state(HashMap::new);
 
     let clicked_point_info = use_state(|| Option::None);
@@ -111,8 +111,8 @@ pub fn MapComponent(props: &Props) -> Html {
                             DamageType::Crack => gen.crack(),
                             DamageType::Patch => gen.patch(),
                             DamageType::Pothole => gen.hole(),
-                            DamageType::Other => gen.bump(), // TODO: fix this
-                            _ => gen.bump(),                 // TODO: and this
+                            DamageType::Other => gen.other(),
+                            _ => gen.other(),
                         };
 
                         marker.setIcon(&icon);
@@ -135,7 +135,9 @@ pub fn MapComponent(props: &Props) -> Html {
                 };
 
                 let mut old_markers_values = (*old_markers).clone();
-                old_markers_values.extend(new_markers.into_iter());
+                for (new_key, new_value) in new_markers.into_iter() {
+                    old_markers_values.insert(new_key, new_value);
+                }
                 old_markers.set(old_markers_values);
                 log::info!("Markers are built!");
             }
