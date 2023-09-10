@@ -27,7 +27,7 @@
           height: 100%;
         }
 
-        .map-container, .map-container>.card, .map-container>.card>.card-body {
+        .map-card, .map-card-body {
           transition: 0.5s all;
         }
 
@@ -45,8 +45,24 @@
 
         .pointview {
           flex: 4 0 auto;
-          transition: 1s flex-grow;
+          transition: 0.5s flex-grow;
+          overflow: hidden;
         }
+
+
+
+        @keyframes nuh-uh-anim {
+          0% { transform: translateX(0) }
+          25% { transform: translateX(10px) }
+          50% { transform: translateX(-10px) }
+          75% { transform: translateX(10px) }
+          100% { transform: translateX(0) }
+        }
+
+        .nuh-uh {
+          animation: nuh-uh-anim 0.25s normal;
+        }
+
 
         /* Leaflet style  */
         .leaflet-container {

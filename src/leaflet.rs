@@ -1,16 +1,15 @@
 mod icons;
 mod layers;
 
-use std::{rc::Rc, str::FromStr};
+use std::{collections::HashMap, marker, rc::Rc};
 
+use common_data::{DamageType, RoadDamage};
 use gloo_utils::document;
 use leaflet::{LatLng, Map, Marker};
-use rand::{Rng, SeedableRng};
-use reqwest::{Method, Request};
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{HtmlElement, Node};
 use yew::prelude::*;
-use yew_hooks::{use_async, use_is_first_mount};
+use yew_hooks::{use_async, use_debounce, use_is_first_mount};
 
 use crate::{
     leaflet::{
@@ -18,6 +17,7 @@ use crate::{
         layers::{get_default_layer, get_matrix_layer, get_transport_layer},
     },
     point_display::PointDisplay,
+    SERVER_ADDR,
 };
 
 #[derive(PartialEq, Properties, Clone)]
@@ -55,9 +55,10 @@ pub fn MapComponent(props: &Props) -> Html {
     }
     let current_layer_style = use_state(|| LayerStyle::Default);
 
-    let markers: yew_hooks::UseListHandle<(Marker, LatLng, bool)> = yew_hooks::use_list(vec![]);
+    let markers: UseStateHandle<HashMap<i64, (RoadDamage, Rc<Marker>, (f64, f64), bool)>> =
+        use_state(HashMap::new);
 
-    let clicked_point_info = use_state(|| Option::<usize>::None);
+    let clicked_point_info = use_state(|| Option::None);
 
     // For ensuring that the map container is always the correct size,
     // as well as for invalidating its initial size of zero (before the element is drawn to the screen)
@@ -73,85 +74,84 @@ pub fn MapComponent(props: &Props) -> Html {
         200,
     );
 
-    let perform_bbox_fetch = use_async({
+    let perform_bbox_fetch: yew_hooks::UseAsyncHandle<(), Rc<anyhow::Error>> = use_async({
         let leaflet = leaflet_box.clone();
-        let markers = markers.clone();
+        let old_markers = markers.clone();
         let clicked_point_info = clicked_point_info.clone();
         async move {
             if let Some(leaflet) = leaflet.as_ref() {
                 log::info!("Starting recalculating markers for area!");
                 let bounds = leaflet.getBounds();
                 let new_markers = {
-                    // TODO: real HTTP request
-                    let client = reqwest::Client::new();
-                    let _response = client
-                        .execute(Request::new(
-                            Method::GET,
-                            reqwest::Url::from_str("https://httpbin.org/anything").unwrap(),
-                        ))
-                        .await;
+                    let response = {
+                        let ne = bounds.getNorthEast();
+                        let sw = bounds.getSouthWest();
+                        let bounds = frontend_requests::AABB {
+                            p1: (ne.lng(), ne.lat()),
+                            p2: (sw.lng(), sw.lat()),
+                        };
+
+                        frontend_requests::get_points_in_rect(SERVER_ADDR, bounds).await?
+                    };
 
                     log::info!("Starting building markers");
-                    let mut markers = vec![];
-                    let ne = bounds.getNorthEast();
-                    let sw = bounds.getSouthWest();
-                    let ne = (ne.lat(), ne.lng());
-                    let sw = (sw.lat(), sw.lng());
-                    let lat_range = if ne.0 > sw.0 { sw.0..ne.0 } else { ne.0..sw.0 };
-                    let lng_range = if ne.1 > sw.1 { sw.1..ne.1 } else { ne.1..sw.1 };
-                    let bound_as_u64: u64 = unsafe { std::mem::transmute(ne.0 + sw.1) };
-                    let mut rng = rand::rngs::StdRng::seed_from_u64(bound_as_u64);
-                    if ne.0 == sw.0 || ne.1 == sw.1 {
-                        log::error!("Not generating data as the map has zero size");
-                        markers
-                    } else {
-                        let mut gen = IconGenerator::default();
-                        let mut icons = vec![];
-                        icons.push(gen.bump());
-                        icons.push(gen.crack());
-                        icons.push(gen.hole());
-                        icons.push(gen.patch());
+                    let mut new_markers = HashMap::new();
 
-                        for i in 0..100 {
-                            let pos = LatLng::new(
-                                rng.gen_range(lat_range.clone()),
-                                rng.gen_range(lng_range.clone()),
-                            );
-                            let marker = Marker::new(&pos);
-
-                            marker.setIcon(&icons[i % icons.len()]);
-                            let click_handler: Closure<dyn FnMut(leaflet::MouseEvent) -> ()> =
-                                Closure::new({
-                                    let clicked_point_id = clicked_point_info.clone();
-                                    move |_e| {
-                                        clicked_point_id.set(Some(i));
-                                    }
-                                });
-
-                            marker.on("click", &click_handler.into_js_value());
-                            markers.push((marker, pos, true));
+                    let mut gen = IconGenerator::default();
+                    for damage in response {
+                        if old_markers.contains_key(&damage.id) {
+                            // Skip processing an existing entry
+                            continue;
                         }
-                        markers
+                        let pos = LatLng::new(damage.latitude, damage.longitude);
+                        let pos_raw = (damage.latitude, damage.longitude);
+                        let marker = Marker::new(&pos);
+
+                        let icon = match damage.damage_type {
+                            DamageType::Crack => gen.crack(),
+                            DamageType::Patch => gen.patch(),
+                            DamageType::Pothole => gen.hole(),
+                            DamageType::Other => gen.bump(), // TODO: fix this
+                            _ => gen.bump(),                 // TODO: and this
+                        };
+
+                        marker.setIcon(&icon);
+
+                        let click_handler: Closure<dyn FnMut(leaflet::MouseEvent) -> ()> =
+                            Closure::new({
+                                let clicked_point_info = clicked_point_info.clone();
+                                let damage = damage.clone();
+                                move |_e| {
+                                    clicked_point_info.set(Some(damage.clone()));
+                                }
+                            });
+
+                        marker.on("click", &click_handler.into_js_value());
+
+                        marker.addTo(&leaflet);
+                        new_markers.insert(damage.id, (damage, Rc::new(marker), pos_raw, true));
                     }
+                    new_markers
                 };
 
-                for (old_marker, _pos, is_visible) in markers.current().iter() {
-                    if *is_visible {
-                        old_marker.remove();
-                    }
-                }
-
-                for (new_marker, _pos, _is_visible) in new_markers.iter() {
-                    new_marker.addTo(&leaflet);
-                }
-
-                markers.set(new_markers);
+                let mut old_markers_values = (*old_markers).clone();
+                old_markers_values.extend(new_markers.into_iter());
+                old_markers.set(old_markers_values);
                 log::info!("Markers are built!");
             }
 
-            Ok::<(), ()>(())
+            anyhow::Result::Ok(())
         }
     });
+
+    let perform_bbox_fetch_loading = perform_bbox_fetch.loading;
+    let perform_bbox_fetch_error = perform_bbox_fetch.error.clone();
+    let perform_bbox_fetch_reset = {
+        let perform_bbox_fetch = perform_bbox_fetch.clone();
+        move || perform_bbox_fetch.update(())
+    };
+
+    let perform_bbox_fetch = use_debounce(move || perform_bbox_fetch.run(), 200);
 
     let (leaflet, container) = if use_is_first_mount() {
         // Initialize the target HTML element
@@ -179,28 +179,20 @@ pub fn MapComponent(props: &Props) -> Html {
                 let bounds = leaflet.getBounds();
                 log::info!("Moving map: current bounds are {:?}", bounds);
 
-                // Compute the markers that are to be updated
-                fn clone_pos(l: &LatLng) -> LatLng {
-                    LatLng::new(l.lat(), l.lng())
-                }
+                let mut markers_value = (*markers).clone();
 
-                let mut markers_value = markers
-                    .current()
-                    .iter()
-                    .map(|(m, l, b)| (m.clone(), clone_pos(l), *b))
-                    .collect::<Vec<_>>();
                 let mut to_add = vec![];
                 let mut to_remove = vec![];
-                for (idx, (_marker, pos, is_present)) in markers_value.iter().enumerate() {
-                    let is_visible = bounds.contains(&pos);
+                for (idx, (_damage, _marker, pos, is_present)) in markers_value.iter() {
+                    let is_visible = bounds.contains(&LatLng::new(pos.0, pos.1));
                     match (is_visible, is_present) {
                         (true, false) => {
                             // Is not on map, but should be
-                            to_add.push(idx);
+                            to_add.push(*idx);
                         }
                         (false, true) => {
                             // Is on map, but shouldn't be
-                            to_remove.push(idx);
+                            to_remove.push(*idx);
                         }
                         _ => {}
                     }
@@ -208,13 +200,13 @@ pub fn MapComponent(props: &Props) -> Html {
 
                 // Apply changes
                 for idx in to_add {
-                    let (marker, _pos, is_present) = markers_value.get_mut(idx).unwrap();
+                    let (_damage, marker, _pos, is_present) = markers_value.get_mut(&idx).unwrap();
                     marker.addTo(&leaflet);
                     log::info!("Adding marker {idx} to map");
                     *is_present = true;
                 }
                 for idx in to_remove {
-                    let (marker, _pos, is_present) = markers_value.get_mut(idx).unwrap();
+                    let (_damage, marker, _pos, is_present) = markers_value.get_mut(&idx).unwrap();
 
                     marker.remove();
                     log::info!("Removing marker {idx} from map");
@@ -231,6 +223,7 @@ pub fn MapComponent(props: &Props) -> Html {
             let perform_bbox_fetch = perform_bbox_fetch.clone();
             move |_e| {
                 log::info!("Map drag is complete, querying for new marker state");
+                perform_bbox_fetch_reset();
                 perform_bbox_fetch.run()
             }
         });
@@ -321,22 +314,38 @@ pub fn MapComponent(props: &Props) -> Html {
 
     // To render the map, need to create VRef to the map's element
     let node: &Node = &container.clone().into();
-    let loading = perform_bbox_fetch.loading;
+    let loading = perform_bbox_fetch_loading;
+    let error = perform_bbox_fetch_error.is_some();
+    let error_box = if let Some(why) = perform_bbox_fetch_error {
+        html!(
+            <div class="toast border border-danger align-items-center show mx-3 my-3 nuh-uh" role="alert" aria-live="assertive" aria-atomic="true" style="position: absolute; top:0; right:0; z-index: 10000;">
+                <div class="d-flex">
+                    <div class="toast-body">
+                        {"Cannot fetch marker positions: "}
+                        <code>{why}</code>
+                    </div>
+                </div>
+            </div>
+        )
+    } else {
+        html!()
+    };
     html! {
         <div class={classes!("map-container", props.class.clone())}>
             <div class="map-and-pointview">
 
                 // Main map widget inside a Card component
                 <div class={classes!("card", "map-card", "mapview", loading.then_some("placeholder-wave"))}>
-                    <div class={classes!("card-body", "map-card-body", loading.then_some("text-warning placeholder"))} style={&props.style}>
+                    <div class={classes!("card-body", "map-card-body", loading.then_some("text-warning placeholder"), error.then_some("bg-danger"))} style={&props.style}>
                         {Html::VRef(node.clone())}
+                        {error_box}
                     </div>
                     {map_style_choice}
                 </div>
 
                 // Side element containing info about clicked points
 
-                <PointDisplay leaflet={leaflet.clone()} clicked_point_info={*clicked_point_info} {clear_clicked_cb} />
+                <PointDisplay leaflet={leaflet.clone()} clicked_point_info={(*clicked_point_info).clone()} {clear_clicked_cb} />
             </div>
         </div>
     }

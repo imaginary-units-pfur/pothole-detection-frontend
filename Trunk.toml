@@ -1,2 +1,6 @@
 [watch]
 ignore=["slippy-map/"]
+
+[serve]
+port=8000
+

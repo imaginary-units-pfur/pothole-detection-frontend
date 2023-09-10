@@ -272,6 +272,7 @@ async fn inner_fetch_tile(
             #[cfg(not(feature = "online"))]
             {
                 drop(idx);
+                let _ = state;
                 tracing::error!(
                     "Tile {style}/{zoom}/{x}/{y} not already on disk, and built without online"
                 );

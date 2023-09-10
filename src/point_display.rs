@@ -1,12 +1,19 @@
 use std::{rc::Rc, str::FromStr};
 
+use common_data::RoadDamage;
 use reqwest::{Method, Request};
-use yew::{prelude::*, suspense::use_future};
+use yew::{
+    prelude::*,
+    suspense::{use_future, use_future_with_deps},
+};
+use yew_hooks::use_previous;
+
+use crate::SERVER_ADDR;
 
 #[derive(Properties)]
 pub struct PointDisplayProps {
     pub leaflet: Rc<leaflet::Map>,
-    pub clicked_point_info: Option<usize>,
+    pub clicked_point_info: Option<RoadDamage>,
     pub clear_clicked_cb: Callback<()>,
 }
 
@@ -19,8 +26,10 @@ impl PartialEq for PointDisplayProps {
 
 #[function_component]
 pub fn PointDisplay(props: &PointDisplayProps) -> Html {
+    let previous_point = use_previous(props.clicked_point_info.clone());
+
     let info = match props.clicked_point_info {
-        Some(v) => v,
+        Some(ref v) => v,
         None => {
             return html!(<div class="pointview" style="flex: 0.0000001 0 auto; width:0px;">{"No point selected yet..."}</div>)
         }
@@ -50,7 +59,7 @@ pub fn PointDisplay(props: &PointDisplayProps) -> Html {
 
 #[derive(Properties, PartialEq, Debug)]
 pub struct SampleInfo {
-    pub sample_info: usize,
+    pub sample_info: RoadDamage,
 }
 
 #[function_component]
@@ -58,7 +67,7 @@ pub fn SamplePointInfo(props: &SampleInfo) -> Html {
     let info = props.sample_info.clone();
     html!(
         <>
-            <h1>{"Point "}{info}</h1>
+            <h1>{"Point "}{info.id}</h1>
             <p>{"Loading detailed info..."}</p>
         </>
     )
@@ -66,28 +75,37 @@ pub fn SamplePointInfo(props: &SampleInfo) -> Html {
 
 #[function_component]
 pub fn DetailedPointInfo(props: &SampleInfo) -> HtmlResult {
-    let response = use_future({
-        move || {
-            async move {
-                // TODO: real HTTP request
-                let client = reqwest::Client::new();
-                let response = client
-                    .execute(Request::new(
-                        Method::GET,
-                        reqwest::Url::from_str("https://httpbin.com/delay/2").unwrap(),
-                    ))
-                    .await;
+    let info = props.sample_info.clone();
+    let response = use_future_with_deps(
+        {
+            |info: Rc<RoadDamage>| async move {
+                let response = frontend_requests::get_info_by_id(SERVER_ADDR, info.id).await;
                 response
             }
-        }
-    })?;
+        },
+        info,
+    )?;
     let info = props.sample_info.clone();
-    Ok(html!(
-        <>
-            <h1>{"Point "}{info}</h1>
+    match *response {
+        Ok(ref more_info) => Ok(html!(
+            <>
+                <h1>{"Point "}{info.id}</h1>
 
-            <p>{"Detailed info loaded!"}</p>
+                <p>{"Detailed info loaded for point "}{format!("{:?}", more_info)}</p>
 
-        </>
-    ))
+            </>
+        )),
+        Err(ref why) => Ok(html!(
+            <>
+            <h1>{"Point "}{info.id}</h1>
+
+            <div class="alert alert-danger nuh-uh">
+                {"Error fetching additional info: "}
+                <code>{why}</code>
+            </div>
+
+            </>
+
+        )),
+    }
 }

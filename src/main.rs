@@ -5,6 +5,8 @@ use yew::prelude::*;
 
 use crate::leaflet::MapComponent;
 
+const SERVER_ADDR: &'static str = "http://localhost:8080";
+
 fn main() {
     wasm_logger::init(wasm_logger::Config::default());
     yew::Renderer::<App>::new().render();
