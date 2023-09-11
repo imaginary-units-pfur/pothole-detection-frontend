@@ -20,10 +20,13 @@ pub struct ShowIconProps {
 #[function_component]
 pub fn ShowIcon(props: &ShowIconProps) -> Html {
     let icon_url = match props.damage_type {
-        DamageType::Crack => "/crack.svg",
-        DamageType::Patch => "/patch.svg",
-        DamageType::Pothole => "/hole.svg",
-        DamageType::Other => "/other.svg",
+        DamageType::Alligator_crack
+        | DamageType::Linear_longitudinal_crack
+        | DamageType::Linear_lateral_crack => "/crack.svg",
+        DamageType::White_line_blur | DamageType::Cross_walk_blur => "/patch.svg",
+        DamageType::Rutting_bump_pothole_separation
+        | DamageType::Utility_hole_maintenance_hatch => "/hole.svg",
+        DamageType::Repair => "/other.svg",
         _ => "/other.svg",
     };
 

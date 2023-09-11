@@ -113,13 +113,20 @@ pub fn DetailedPointInfo(props: &SampleInfo) -> HtmlResult {
     match *response {
         Ok(ref more_info) => {
             let kind = match info.damage_type {
-                DamageType::Crack => "Crack",
-                DamageType::Patch => "Patch",
-                DamageType::Pothole => "Pothole",
-                DamageType::Other | _ => "Other",
+                DamageType::Alligator_crack => "Alligator crack",
+                DamageType::Rutting_bump_pothole_separation => "Rutting/bump/pothole/separation",
+                DamageType::Linear_longitudinal_crack => "Linear longitudinal crack",
+                DamageType::White_line_blur => "White line blur",
+                DamageType::Linear_lateral_crack => "Linear lateral crack",
+                DamageType::Cross_walk_blur => "Cross walk blur",
+                DamageType::Utility_hole_maintenance_hatch => "Utility hole/maintenance hatch",
+                DamageType::Repair => "Repair",
+                _ => "Unknown",
             };
 
-            let score = std::f64::consts::PI / 10.0;
+            let kind_more = &more_info.top_type;
+
+            let score = more_info.top_certainty;
 
             use crate::SERVER_ADDR;
 
@@ -132,13 +139,13 @@ pub fn DetailedPointInfo(props: &SampleInfo) -> HtmlResult {
                     <p>{"Latitude: "}{info.latitude}</p>
                     <div class="card">
                         <div class="card-body">
-                            <img src={format!("{SERVER_ADDR}/image/of-point/{}", info.id)} />
+                            <img style="width: 100%" src={format!("{SERVER_ADDR}/image/of-point/{}", info.id)} />
                         </div>
                     </div>
                     <hr />
 
                     <h3>{"Analysis details"}</h3>
-                    <p>{"Label: "}<span class="text-success">{"qwertyuiopasdfghjkl"}</span></p>
+                    <p>{"Label: "}<span class="text-success">{kind_more}</span></p>
                     <p>{"Confidence: "}<span class="text-info">{format!("{:.5}%", score*100.0)}</span>
 
                         <div class="progress" role="progressbar">

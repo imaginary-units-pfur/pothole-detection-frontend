@@ -108,11 +108,15 @@ pub fn MapComponent(props: &Props) -> Html {
                         let marker = Marker::new(&pos);
 
                         let icon = match damage.damage_type {
-                            DamageType::Crack => gen.crack(),
-                            DamageType::Patch => gen.patch(),
-                            DamageType::Pothole => gen.hole(),
-                            DamageType::Other => gen.other(),
-                            _ => gen.other(),
+                            DamageType::Alligator_crack
+                            | DamageType::Linear_longitudinal_crack
+                            | DamageType::Linear_lateral_crack => gen.crack(),
+                            DamageType::White_line_blur | DamageType::Cross_walk_blur => {
+                                gen.patch()
+                            }
+                            DamageType::Rutting_bump_pothole_separation
+                            | DamageType::Utility_hole_maintenance_hatch => gen.hole(),
+                            DamageType::Repair | _ => gen.other(),
                         };
 
                         marker.setIcon(&icon);
